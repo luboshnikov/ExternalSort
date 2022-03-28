@@ -1,5 +1,6 @@
 #include <fstream>
 #include <iostream>
+#include <future>
 #include <vector>
 #include <algorithm>
 using namespace std;
@@ -14,10 +15,11 @@ vector<string> read_and_sort(ifstream& in, size_t max_size){
     if(input_size == 0){
         return {};
     }
-    vector<string> res((input_size-1)/max_size + 1);
+    size_t res_size = input_size/max_size + (input_size%max_size == 0 ? 0 : 1);
+    vector<string> res(res_size);
     vector<unsigned> fragment(max_size);
 
-    for(size_t i = 0; i < res.size(); i++){
+    for(size_t i = 0; i < res_size; i++){
         if(input_size < max_size){
             max_size = input_size;
         }
@@ -32,37 +34,77 @@ vector<string> read_and_sort(ifstream& in, size_t max_size){
     return move(res);
 }
 
-void write(const vector<string>& buffers_name, ofstream& out){
-    size_t count = buffers_name.size();
-    vector<unsigned> res(count);
-    vector<ifstream> buffers(count);
-    for(int i = 0; i < count; i++){
-        buffers[i].open(buffers_name[i]);
-        buffers[i].read((char*)&res[i], sizeof(unsigned));
+void mergefiles(const string& first_file, const string& second_file, const string& output_file){
+    unsigned first, second;
+    bool firstflag = false, secondflag = false;
+    fstream first_in(first_file, ios::binary | ios::in);
+    fstream second_in(second_file, ios::binary | ios::in);
+    fstream out(output_file, ios::binary | ios::out);
+    if(first_in.read((char*)&first, sizeof(unsigned))) {
+        firstflag = true;
     }
-    while(count != 0){
-        size_t buf_with_min = min_element(res.begin(), res.begin()+count) - res.begin();
-        unsigned numb = res[buf_with_min];
-        out.write((char*)&numb, sizeof(unsigned));
-
-        if (!buffers[buf_with_min].read((char*)&res[buf_with_min], sizeof(unsigned))) {
-            count--;
-            swap(buffers[buf_with_min], buffers[count]);
-            swap(res[buf_with_min], res[count]);
-            buffers[count].close();
+    if(second_in.read((char*)&second, sizeof(unsigned))) {
+        secondflag = true;
+    }
+    while(firstflag && secondflag){
+        if(first < second){
+            out.write((char*)&first, sizeof(unsigned));
+            if(!first_in.read((char*)&first, sizeof(unsigned)))
+                firstflag = false;
+        } else {
+            out.write((char*)&second, sizeof(unsigned));
+            if(!second_in.read((char*)&second, sizeof(unsigned)))
+                secondflag = false;
         }
     }
-    for(auto i : buffers_name){
-        remove((const char*)&i[0]);
+    if(secondflag){
+        out.write((char*)&second, sizeof(unsigned));
+        while(second_in.read((char*)&second, sizeof(unsigned))){
+            out.write((char*)&second, sizeof(unsigned));
+        }
+    } else if(firstflag){
+        out.write((char*)&first, sizeof(unsigned));
+        while(first_in.read((char*)&first, sizeof(unsigned))){
+            out.write((char*)&first, sizeof(unsigned));
+        }
     }
+
+}
+
+void write_with_multithreading(vector<string> buffers_name, const string& output_file){
+    size_t count = buffers_name.size();
+    if(count == 0) {
+        cout << "Input file is empty or incorrect\n";
+        return;
+    }
+    while(count > 1){
+        vector<future<void>> futures;
+        futures.reserve(count/2);
+        size_t i = 0;
+        while(i < count-1){
+            count--;
+            const string res_name = buffers_name[i] + '_' + to_string(count),
+                    first = buffers_name[i],
+                    second = buffers_name[count];
+            futures.push_back(
+                    async([first, second, res_name]{
+                        mergefiles(first, second, res_name);
+                        remove((char*)&first[0]);
+                        remove((char*)&second[0]);
+                    })
+            );
+            buffers_name[i] = res_name;
+            i++;
+        }
+
+    }
+    rename((const char*)&buffers_name[0][0], (const char*)&output_file[0]);
 }
 
 int main () {
     ifstream in("input", ios::binary);
     if(in.is_open()){
-        vector<string> buffers = read_and_sort(in, MAX_SIZE);
-        ofstream out("output", ios::binary);
-        write(buffers, out);
+        write_with_multithreading(read_and_sort(in, MAX_SIZE), "output");
     } else {
         cout << "input file not found.\n";
     }
