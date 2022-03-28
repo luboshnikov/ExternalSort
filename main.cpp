@@ -1,4 +1,5 @@
 #include <fstream>
+#include <iostream>
 #include <vector>
 #include <algorithm>
 using namespace std;
@@ -58,7 +59,11 @@ void write(const vector<string>& buffers_name, ofstream& out){
 
 int main () {
     ifstream in("input", ios::binary);
-    vector<string> buffers = read_and_sort(in, MAX_SIZE);
-    ofstream out("output", ios::binary);
-    write(buffers, out);
+    if(in.is_open()){
+        vector<string> buffers = read_and_sort(in, MAX_SIZE);
+        ofstream out("output", ios::binary);
+        write(buffers, out);
+    } else {
+        cout << "input file not found.\n";
+    }
 }
